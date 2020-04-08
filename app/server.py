@@ -13,19 +13,32 @@ class ServerProtocol(asyncio.Protocol):
     def __init__(self, server: 'Server'):
         self.server = server
 
-    def data_received(self, data: bytes):
-        print(data)
+    def send_history(self):
+        print(f'Отправил историю = > {self.login}')
+        # на случай если сообщений больше 10
+        for massage in self.server.history[-10:] if len(self.server.history) > 10 else self.server.history:
+            self.transport.write(f'{massage}'.encode())
+            print(massage)
 
-        decoded = data.decode()
+    def data_received(self, data: bytes):
+        # print(data)
+        decoded = data.decode(encoding='utf-8')
 
         if self.login is not None:
             self.send_message(decoded)
         else:
             if decoded.startswith("login:"):
-                self.login = decoded.replace("login:", "").replace("\r\n", "")
-                self.transport.write(
-                    f"Привет, {self.login}!\n".encode()
-                )
+                self.login = decoded.replace("logon:", "").replace("\r\n", "")
+                if self.login in self.server.nick:
+                    self.transport.write(f"Логин {self.login} занят, попробуйте другой \n".encode())
+                    #  - Отключать от сервера соединение клиента
+                    self.server.clients.remove(self)
+                    return
+                else:
+                    self.transport.write(
+                        f"Привет, {self.login}!\n".encode())
+                    self.send_history()
+                    self.server.nick.add(self.login)
             else:
                 self.transport.write("Неправильный логин\n".encode())
 
@@ -40,16 +53,22 @@ class ServerProtocol(asyncio.Protocol):
 
     def send_message(self, content: str):
         message = f"{self.login}: {content}\n"
-
-        for user in self.server.clients:
+        users = [user for user in self.server.clients if user != self]
+        # подправил что бы клиент не видел собственные сообщения
+        for user in users:
             user.transport.write(message.encode())
+        self.server.history.append(message)
 
 
 class Server:
-    clients: list
+    clients: list  # экземпляры классов
+    nick: set  # clients.login
+    history: list
 
     def __init__(self):
         self.clients = []
+        self.nick = set()
+        self.history = []
 
     def build_protocol(self):
         return ServerProtocol(self)

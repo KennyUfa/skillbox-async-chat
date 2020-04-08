@@ -32,7 +32,7 @@ class ServerProtocol(asyncio.Protocol):
                 if self.login in self.server.nick:
                     self.transport.write(f"Логин {self.login} занят, попробуйте другой \n".encode())
                     #  - Отключать от сервера соединение клиента
-                    self.server.clients.remove(self)
+                    self.transport.close()
                     return
                 else:
                     self.transport.write(
